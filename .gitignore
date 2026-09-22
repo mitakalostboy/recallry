@@ -1,0 +1,35 @@
+# Generated operational content, including databases, journals and backups.
+/data/*
+!/data/.gitkeep
+/candidates/*
+!/candidates/.gitkeep
+/exports/*
+!/exports/.gitkeep
+/knowledge/global/*
+!/knowledge/global/.gitkeep
+/knowledge/projects/*
+!/knowledge/projects/.gitkeep
+
+# Build output and local test environments.
+/build/
+/dist/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.venv/
+venv/
+.tox/
+.nox/
+*.egg-info/
+/.tmp/
+/tmp/
+/.coverage
+/.coverage.*
+/htmlcov/
+/test-results/
+.DS_Store
+
+# Local environment configuration.
+.env
+.env.*

@@ -1,0 +1,4 @@
+default_context_limit = 15
+default_context_content_chars = 800
+default_context_max_chars = 12000
+default_status = "candidate"
