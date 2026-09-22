@@ -119,4 +119,3 @@ Use a dedicated Recallry home; database migration is not supported.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for tests and contribution guidance and
 [SECURITY.md](SECURITY.md) for sensitive reports. Licensed under the [MIT License](LICENSE).
-This early v0.1.0 working tree has not yet passed its independent public-release audit.
