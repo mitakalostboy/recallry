@@ -65,6 +65,7 @@ class ConnectCliTestCase(unittest.TestCase):
             self.assertEqual(content.count(START), 1)
             self.assertEqual(content.count(END), 1)
             self.assertIn(f"parent `{parent}`".encode(), content)
+            self.assertIn(b"--automatic --format json-compact`", content)
         self.assertIn(".recallry.toml: created", result.stdout)
         self.assertIn("CLAUDE.md: created", result.stdout)
         self.assertIn("AGENTS.md: created", result.stdout)
@@ -113,6 +114,38 @@ class ConnectCliTestCase(unittest.TestCase):
         self.assertTrue(second.endswith(outside_after))
         self.assertIn(b"Updated template rule.", second)
         self.assertEqual(second.count(START), 1)
+
+    def test_existing_home_requires_explicit_template_and_block_upgrade(self):
+        old = b"--automatic --format json`"
+        new = b"--automatic --format json-compact`"
+        names = (("recallry-claude-router.md", "CLAUDE.md"),
+                 ("recallry-codex-router.md", "AGENTS.md"))
+        for template_name, project_name in names:
+            template = self.root / "templates" / template_name
+            template.write_bytes(template.read_bytes().replace(new, old) + b"- Local template rule.\n")
+            (self.project / project_name).write_bytes(b"# Custom project instructions\n")
+        self.assertEqual(self.connect().returncode, 0)
+        self.assertEqual(self.run_cli("init").returncode, 0)
+        self.assertEqual(self.connect().returncode, 0)
+        for template_name, project_name in names:
+            template = self.root / "templates" / template_name
+            project_file = self.project / project_name
+            self.assertIn(old, template.read_bytes())
+            self.assertIn(old, project_file.read_bytes())
+            self.assertIn(b"# Custom project instructions\n", project_file.read_bytes())
+            # The documented upgrade changes only this flag in each stored
+            # template and connected managed block.
+            for path in (template, project_file):
+                before = path.read_bytes()
+                self.assertEqual(before.count(old), 1)
+                path.write_bytes(before.replace(old, new))
+                self.assertEqual(path.read_bytes(), before.replace(old, new))
+            self.assertIn(b"Local template rule.", template.read_bytes())
+            self.assertIn(b"# Custom project instructions\n", project_file.read_bytes())
+        result = self.connect()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("CLAUDE.md: unchanged", result.stdout)
+        self.assertIn("AGENTS.md: unchanged", result.stdout)
 
     def test_config_conflict_fails_before_any_write(self):
         config = self.project / ".recallry.toml"

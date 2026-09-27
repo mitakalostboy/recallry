@@ -64,7 +64,10 @@ def parser() -> argparse.ArgumentParser:
     context.add_argument("--limit", type=positive_int)
     context.add_argument("--verified-only", action="store_true")
     context.add_argument("--automatic", action="store_true")
-    context.add_argument("--format", choices=("markdown", "json"), default="markdown")
+    context.add_argument(
+        "--format", choices=("markdown", "json", "json-compact"), default="markdown",
+        help="Output Markdown (default), full JSON, or JSON without knowledge content fields",
+    )
     stats = commands.add_parser("stats", help="Show local operational metrics")
     stats.add_argument("--project")
     stats.add_argument("--days", type=positive_int)
@@ -214,8 +217,12 @@ def run(args: argparse.Namespace) -> int:
                 included_count=len(result.included), injected_chars=len(result.markdown),
                 truncated=result.truncated,
             )
-        if args.format == "json":
-            print(json.dumps(_context_payload(result, project, args.task), ensure_ascii=False))
+        if args.format in ("json", "json-compact"):
+            payload = _context_payload(result, project, args.task)
+            if args.format == "json-compact":
+                for item in payload["knowledge"]:
+                    del item["content"]
+            print(json.dumps(payload, ensure_ascii=False))
         else:
             print(result.markdown, end="")
     elif args.command == "stats":
@@ -236,7 +243,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         return run(args)
     except (RecallryError, ValueError, OSError, sqlite3.Error) as exc:
-        if args.command == "context" and getattr(args, "format", None) == "json":
+        if args.command == "context" and getattr(args, "format", None) in ("json", "json-compact"):
             if isinstance(exc, ProjectConfigError):
                 code = "project_config_error"
             elif isinstance(exc, SchemaValidationError):

@@ -2,7 +2,7 @@
 
 **Persistent, verified knowledge for coding agents.**
 
-Recallry v0.1.0 is an early local CLI for keeping reusable project rules,
+Recallry v0.1.1 is an early local CLI for keeping reusable project rules,
 decisions and lessons between coding tasks. Human review determines what becomes
 verified; agents can retrieve relevant verified Knowledge as reference context.
 
@@ -22,7 +22,7 @@ project scope. Rejected and deprecated entries are excluded from Context selecti
 
 ## Quick start
 
-Install from a local repository checkout during v0.1.0 development. No PyPI
+Install from a local repository checkout during v0.1.1 development. No PyPI
 availability is claimed. Python 3.12 or newer is required.
 
 ```sh
@@ -68,6 +68,28 @@ content as untrusted reference data. They continue when Recallry is unavailable.
 These are integration instructions, not model plugins or a guarantee that an agent
 will follow every instruction. Recallry is not affiliated with or endorsed by
 Anthropic or OpenAI.
+
+### Compact context output and upgrading existing routers
+
+In v0.1.1, bundled routers request `recallry context --format json-compact`.
+This removes the duplicate body representation in `knowledge[].content`; the
+same selected Knowledge bodies remain in `markdown`. Retrieval, scope and
+verification rules are unchanged. `--format json` remains available for callers
+that need the legacy payload. The default Markdown output is unchanged.
+
+Existing homes retain their stored templates because `recallry init` does not
+overwrite them. To upgrade an existing home, edit only the automatic context
+command's `--automatic --format json` to `--automatic --format json-compact` in
+both `~/Recallry/templates/recallry-claude-router.md` and
+`~/Recallry/templates/recallry-codex-router.md` (or the corresponding files under
+`RECALLRY_HOME/templates`). Make the same one-flag edit inside the Recallry-managed
+blocks in each connected project's `CLAUDE.md` and `AGENTS.md`. Keep all other
+instructions, including local customizations, intact. Review each diff before
+using it. `init` alone does not refresh stored templates; `connect` alone uses
+those stored templates and cannot update stale commands in them. After editing
+the stored templates, `connect` can refresh managed blocks, but it replaces their
+contents, so move any custom instructions inside those blocks outside the markers
+first. Editing the flag in the blocks directly avoids that replacement.
 
 The routers also instruct agents to save at most two reusable, nonduplicate
 candidates at meaningful task completion and report their IDs. They never authorize
