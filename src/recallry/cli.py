@@ -10,6 +10,7 @@ import sys
 
 from .connect import connect_project, validate_project_id
 from .config import load_config, resolve_recallry_root
+from .automatic_context import generate_automatic_context
 from .context import generate_context
 from .db import RecallryError, Database, SchemaValidationError
 from .metrics import MetricsStore, render_stats, source_origin
@@ -201,14 +202,17 @@ def run(args: argparse.Namespace) -> int:
         if args.automatic and args.project_root is None:
             raise ProjectConfigError("--automatic requires --project-root with .recallry.toml")
         automatic = args.automatic
-        result = generate_context(
-            database, project=project, task=args.task,
-            limit=min(args.limit or 8, 8) if automatic else (args.limit or config.default_context_limit),
-            content_chars=600 if automatic else config.default_context_content_chars,
-            max_chars=6000 if automatic else config.default_context_max_chars,
-            verified_only=args.verified_only or automatic,
-            increment_usage=not (_read_only_enabled() or automatic),
-        )
+        if automatic:
+            result = generate_automatic_context(database, project=project, task=args.task)
+        else:
+            result = generate_context(
+                database, project=project, task=args.task,
+                limit=args.limit or config.default_context_limit,
+                content_chars=config.default_context_content_chars,
+                max_chars=config.default_context_max_chars,
+                verified_only=args.verified_only,
+                increment_usage=not _read_only_enabled(),
+            )
         if automatic:
             _record_metrics(
                 metrics, "automatic_context", project_id=project, command="context",

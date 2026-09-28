@@ -89,11 +89,9 @@ class ContextResult:
     truncated: bool
 
 
-def select_context(
-    database: Database, *, project: str | None, task: str, limit: int,
-    verified_only: bool = False,
+def _fetch_candidates(
+    database: Database, *, project: str | None, verified_only: bool,
 ) -> list[Knowledge]:
-    terms = _tokenize(task)
     status_clause = "status='verified'" if verified_only else "status IN ('verified','candidate')"
     with database.connect() as connection:
         rows = connection.execute(
@@ -103,7 +101,15 @@ def select_context(
             ORDER BY updated_at DESC, id""",
             (project,),
         ).fetchall()
-    items = [Knowledge(**dict(row)) for row in rows]
+    return [Knowledge(**dict(row)) for row in rows]
+
+
+def select_context(
+    database: Database, *, project: str | None, task: str, limit: int,
+    verified_only: bool = False,
+) -> list[Knowledge]:
+    terms = _tokenize(task)
+    items = _fetch_candidates(database, project=project, verified_only=verified_only)
 
     def relevance(item: Knowledge) -> int:
         text = f"{item.title} {item.content} {item.category}".lower()

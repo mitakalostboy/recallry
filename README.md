@@ -2,7 +2,7 @@
 
 **Persistent, verified knowledge for coding agents.**
 
-Recallry v0.1.1 is an early local CLI for keeping reusable project rules,
+Recallry v0.1.2 is an early local CLI for keeping reusable project rules,
 decisions and lessons between coding tasks. Human review determines what becomes
 verified; agents can retrieve relevant verified Knowledge as reference context.
 
@@ -22,7 +22,7 @@ project scope. Rejected and deprecated entries are excluded from Context selecti
 
 ## Quick start
 
-Install from a local repository checkout during v0.1.1 development. No PyPI
+Install from a local repository checkout during v0.1.2 development. No PyPI
 availability is claimed. Python 3.12 or newer is required.
 
 ```sh
@@ -128,8 +128,53 @@ whitespace tokenization. Mixed identifiers are retained, and punctuation separat
 CJK runs. Scope filtering, verified handling and deterministic same-rank ordering
 are unchanged; this is lexical matching, not semantic search.
 
-Task relevance ranks Knowledge within the eligible scope; it is not a minimum
-inclusion threshold. Entries with zero lexical matches may still be returned.
+For manual (nonautomatic) context, task relevance ranks Knowledge within the
+eligible scope; it is not a minimum inclusion threshold. Entries with zero lexical
+matches may still be returned. Manual search remains a separate FTS5/LIKE path.
+
+Automatic context in v0.1.2 uses **Fix F2 Variant A → deterministic top 5 → existing
+render budget**. Only verified Knowledge is eligible. Script-aware lexical spans
+collapse overlapping CJK bigrams into evidence units, with stopword filtering and
+ASCII token-boundary matching. Global entries need at least two matched spans;
+Project entries need at least one. Project entries receive a +1 ranking boost,
+which does not bypass eligibility or guarantee inclusion. All returned top-five
+candidates are kept; rendering preserves the existing Global/Project grouping,
+with no post-selection scope filter.
+Results may naturally contain 0–5 items; zero-match or insufficient-evidence items
+are not added merely to fill the old limit. Automatic selection uses a fixed top
+five regardless of `--limit`; manual context still honors that option.
+
+The existing renderer keeps its Global/Project grouping, 600-character body cap
+and 6,000-character total budget. `included_chars` remains `len(markdown)` and
+`json-compact` still omits duplicate Knowledge bodies. No new runtime dependency,
+model, embedding, cloud service or database migration is required. Existing
+Knowledge stores need no action. Router templates are unchanged from v0.1.1, so
+no router refresh is required for this update.
+
+### Context-size benchmark
+
+On a frozen sample of 366 real automatic-router tasks, the Recallry automatic-context
+payload was approximately 34% smaller under o200k_base/cl100k_base tokenization
+estimates. This internal sample contains no synthetic tasks; raw tasks and Knowledge
+are not published. Measurements were collected on the internal implementation
+before this equivalent retrieval port, not on a separate public-workload sample.
+
+| Measure | Previous selection | Fix F2 top 5 | Reduction |
+| --- | ---: | ---: | ---: |
+| Selected items | 2,928 | 1,809 | 38.22% |
+| Actual context tokens, o200k_base | 497,007 | 327,399 | 34.13% |
+| Actual context tokens, cl100k_base | 500,476 | 331,552 | 33.75% |
+
+Rendered characters decreased by 32.44%. With the common task/header excluded,
+Knowledge-only tokens decreased by 36.25% (o200k_base) and 35.85% (cl100k_base).
+Average actual-context savings were approximately 463 and 462 tokens per call,
+respectively, using `tiktoken==0.14.0` in an isolated measurement environment.
+
+These tokenizer values are estimates/proxies, not exact provider billing tokens
+or universal savings. The benchmark measures Recallry-added context only; system
+prompts, conversation history and tool output outside that context are excluded.
+It does not measure total Claude/Codex token use. Tokenizer packages are not
+runtime dependencies.
 
 ## Independent stores
 

@@ -57,7 +57,7 @@ class MetricsCliTestCase(unittest.TestCase):
         )
 
     def automatic(self, *, readonly: bool = True, metrics: str | None = None,
-                  task: str = "private task text"):
+                  task: str = "private task text verified"):
         return self.run_cli(
             "context", "--project-root", str(self.project), "--task", task,
             "--automatic", "--format", "json", readonly=readonly, metrics=metrics,

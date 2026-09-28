@@ -69,13 +69,14 @@ class CompactContextCliTest(unittest.TestCase):
         self.assertEqual(full["knowledge"], [])
         self.assertEqual(compact["included_count"], 0)
         for index in range(12):
-            self.add_verified(f"長い項目 {index}", "日本語" * 500)
-        full, compact = self.paired(task="長い", extra=("--limit", "999"))
+            self.add_verified(f"長文項目 {index}", "日本語" * 500,
+                              scope="project", project="sample-project")
+        full, compact = self.paired(task="長文", extra=("--limit", "999"))
         self.assertTrue(compact["truncated"])
-        self.assertLessEqual(compact["included_count"], 8)
+        self.assertEqual(compact["included_count"], 5)
         self.assertLessEqual(compact["included_chars"], 6000)
         self.assertEqual(self.context().stdout, self.context("markdown").stdout)
-        self.assertEqual(self.context(task="長い", extra=("--limit", "999")).stdout,
+        self.assertEqual(self.context(task="長文", extra=("--limit", "999")).stdout,
                          full["markdown"])
 
     def test_bodies_metadata_order_scope_and_verified_only(self):
@@ -87,7 +88,7 @@ class CompactContextCliTest(unittest.TestCase):
         self.add_verified("別プロジェクト", "除外", scope="project", project="other-project")
         self.db.add(title="未検証", content="除外", scope="global", project=None,
                     category="rule", status="candidate")
-        full, compact = self.paired(task="同名 確認")
+        full, compact = self.paired(task="同名 確認 global")
         self.assertEqual({x["id"] for x in compact["knowledge"]}, {first, second, global_id})
         self.assertEqual([x["id"] for x in compact["knowledge"]],
                          [x["id"] for x in full["knowledge"]])

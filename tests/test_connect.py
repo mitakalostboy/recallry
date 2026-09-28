@@ -231,7 +231,7 @@ class ConnectCliTestCase(unittest.TestCase):
             ("Other verified", "project", "other-project", "verified"),
             ("Current candidate", "project", "context-project", "candidate"),
         ):
-            item = database.add(title=title, content=title, scope=scope, project=project,
+            item = database.add(title=title, content="task context", scope=scope, project=project,
                                 category="rule", status="candidate")
             if status == "verified":
                 database.transition(item.id, "promote")
@@ -239,7 +239,7 @@ class ConnectCliTestCase(unittest.TestCase):
         result = self.connect("context-project")
         self.assertEqual(result.returncode, 0, result.stderr)
         context = self.run_cli(
-            "context", "--project-root", str(self.project), "--task", "context",
+            "context", "--project-root", str(self.project), "--task", "task context",
             "--automatic", "--format", "json", readonly=True,
         )
         self.assertEqual(context.returncode, 0, context.stderr)

@@ -6,6 +6,7 @@ include config.toml
 include templates/recallry-claude-router.md
 include templates/recallry-codex-router.md
 include docs/CANDIDATE_REVIEW_POLICY.md
+include docs/RELEASE_NOTES_v0.1.2.md
 include tests/__init__.py
 include tests/test_*.py
 include src/recallry/*.py

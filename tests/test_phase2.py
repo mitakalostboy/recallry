@@ -140,18 +140,18 @@ class Phase2CliTestCase(unittest.TestCase):
         )
 
     def test_json_output_schema_and_verified_only_automatic_path(self):
-        self.add_verified("Global verified")
-        self.add_verified("Project verified", scope="project", project="sample-project")
+        self.add_verified("Global verified", content="task context")
+        self.add_verified("Project verified", content="task context", scope="project", project="sample-project")
         self.add_verified("Other verified", scope="project", project="other-project")
         db = Database(self.root / "data" / "recallry.db")
         db.add(title="Candidate", content="candidate", scope="global", project=None,
                category="rule", status="candidate")
-        result = self.automatic_json()
+        result = self.automatic_json(task="task context")
         self.assertEqual(result.returncode, 0, result.stderr)
         payload = json.loads(result.stdout)
         self.assertEqual(payload["status"], "ok")
         self.assertEqual(payload["project_id"], "sample-project")
-        self.assertEqual(payload["task"], "task")
+        self.assertEqual(payload["task"], "task context")
         self.assertEqual(payload["included_count"], 2)
         self.assertLessEqual(payload["included_chars"], 6000)
         self.assertIsInstance(payload["truncated"], bool)
@@ -170,11 +170,12 @@ class Phase2CliTestCase(unittest.TestCase):
 
     def test_automatic_cli_enforces_small_budget(self):
         for number in range(12):
-            self.add_verified(f"Large {number}", content="x" * 1000)
+            self.add_verified(f"Large {number}", content="task " + "x" * 1000,
+                              scope="project", project="sample-project")
         result = self.automatic_json(extra_arguments=("--limit", "999"))
         self.assertEqual(result.returncode, 0, result.stderr)
         payload = json.loads(result.stdout)
-        self.assertLessEqual(payload["included_count"], 8)
+        self.assertEqual(payload["included_count"], 5)
         self.assertLessEqual(payload["included_chars"], 6000)
         self.assertTrue(all(len(item["content"]) <= 600 for item in payload["knowledge"]))
 
