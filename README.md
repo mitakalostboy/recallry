@@ -176,6 +176,37 @@ prompts, conversation history and tool output outside that context are excluded.
 It does not measure total Claude/Codex token use. Tokenizer packages are not
 runtime dependencies.
 
+### Task-level AI Brain ON/OFF pilot (2026-10-18)
+
+A separate exploratory pilot compared the internal AI Brain implementation ON and
+OFF across four repository-investigation questions (one pair per question, eight
+completed v2 runs). The report records Claude Code / Opus 5.5 / HIGH. This was not
+a benchmark of a particular public Recallry release, and it used no knowledge graph.
+
+| Reported aggregate | AI Brain OFF | AI Brain ON | Change |
+| --- | ---: | ---: | ---: |
+| Correctness score | 2/2 on all four questions | 2/2 on all four questions | No difference |
+| Mean weighted evidence recall | 0.952 | 0.994 | +0.042 |
+| Cumulative task tokens, including cache categories | 8,975,671 | 7,072,993 | −21.2% |
+| Estimated API-equivalent cost | $6.441 | $5.951 | −7.6% |
+| Wall-clock time | 1,022 s | 978 s | −4.4% |
+| Tool calls | 134 | 115 | −14.2% |
+
+**Conclusion: IMPROVE, not a demonstrated repeatable benefit.** Q4 used 30.3% more
+tokens with AI Brain. Q1-B also saw candidate titles through follow-up retrieval,
+so the strict verified-only condition was not fully maintained. There was only one
+pair per question, scoring was only partially blinded, and Q1's pair was separated
+by a subscription-limit reset. Figures above are reported aggregates, not a promise
+of savings or a statistical validation of Recallry. API-equivalent costs are not
+additional subscription charges, and task-token totals include repeated cache reads.
+
+Read the [full Japanese report and separate publication notes](docs/benchmarks/2026-10-18-ai-brain-on-off.md)
+for per-question results, isolation checks, retrieval misses, and limitations.
+Private project identifiers and Knowledge excerpts are redacted; source snapshots,
+databases, answer keys and raw logs are not published, so full independent
+reproduction is not possible from this report alone. This task-level comparison
+is distinct from the context-size benchmark above.
+
 ## Independent stores
 
 Recallry only opens Recallry-managed databases. Databases with unknown or
