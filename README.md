@@ -2,17 +2,11 @@
 
 **Persistent, verified knowledge for coding agents.**
 
-Recallry v0.1.2 is an early local CLI for keeping reusable project rules,
-decisions and lessons between coding tasks. Human review determines what becomes
-verified; agents can retrieve relevant verified Knowledge as reference context.
-
-```text
-candidate
-   ↓ human review
-verified
-   ↓ task-relevant retrieval
-coding agent context
-```
+Recallry 2.0 is a local CLI for keeping project rules, decisions and lessons
+between coding tasks. Claude Code and Codex can retrieve relevant verified
+Knowledge through the existing lexical search. The new `learn` command checks
+proposals against committed evidence. Manual `add` still creates a candidate;
+operators retain the existing promote, reject and deprecate commands.
 
 `add` always creates a candidate. `promote` records a human review decision;
 `reject` declines a candidate, while `deprecate` retires verified Knowledge.
@@ -22,8 +16,7 @@ project scope. Rejected and deprecated entries are excluded from Context selecti
 
 ## Quick start
 
-Install from a local repository checkout during v0.1.2 development. No PyPI
-availability is claimed. Python 3.12 or newer is required.
+Install from the v2.0.0 GitHub release checkout. Python 3.12 or newer is required.
 
 ```sh
 python3 -m venv .venv
@@ -69,39 +62,74 @@ These are integration instructions, not model plugins or a guarantee that an age
 will follow every instruction. Recallry is not affiliated with or endorsed by
 Anthropic or OpenAI.
 
-### Compact context output and upgrading existing routers
+### Upgrading from 0.1.x
 
-In v0.1.1, bundled routers request `recallry context --format json-compact`.
-This removes the duplicate body representation in `knowledge[].content`; the
-same selected Knowledge bodies remain in `markdown`. Retrieval, scope and
-verification rules are unchanged. `--format json` remains available for callers
-that need the legacy payload. The default Markdown output is unchanged.
+Install the new package into the same environment and keep your existing
+`RECALLRY_HOME`. The public store identity, Knowledge schema and manual commands
+are compatible. Upgrading the package does not enroll existing candidates in
+unattended review. `recallry init` keeps existing settings and router templates.
 
-Existing homes retain their stored templates because `recallry init` does not
-overwrite them. To upgrade an existing home, edit only the automatic context
-command's `--automatic --format json` to `--automatic --format json-compact` in
-both `~/Recallry/templates/recallry-claude-router.md` and
-`~/Recallry/templates/recallry-codex-router.md` (or the corresponding files under
-`RECALLRY_HOME/templates`). Make the same one-flag edit inside the Recallry-managed
-blocks in each connected project's `CLAUDE.md` and `AGENTS.md`. Keep all other
-instructions, including local customizations, intact. Review each diff before
-using it. `init` alone does not refresh stored templates; `connect` alone uses
-those stored templates and cannot update stale commands in them. After editing
-the stored templates, `connect` can refresh managed blocks, but it replaces their
-contents, so move any custom instructions inside those blocks outside the markers
-first. Editing the flag in the blocks directly avoids that replacement.
+To adopt evidence-gated learning in an existing project, compare the release's
+two `templates/recallry-*-router.md` files with the copies under your store's
+`templates/`. Merge the new learning instructions while keeping your own
+restrictions. Preserve any local project instructions outside the managed blocks,
+preview with `recallry connect <directory> --project-id <id> --dry-run`, and
+then repeat without `--dry-run` to apply. Existing projects can continue using
+their older candidate-only templates until refreshed. Automatic retrieval still
+uses the verified-only `context --automatic --format json-compact` route.
 
-The routers also instruct agents to save at most two reusable, nonduplicate
-candidates at meaningful task completion and report their IDs. They never authorize
-automatic promotion. To prohibit Knowledge writes, start the agent with
-`RECALLRY_READONLY=1`; human write commands in that environment are also blocked.
-Review candidates using [the review policy](docs/CANDIDATE_REVIEW_POLICY.md).
+### Evidence-gated approval
+
+Use `recallry learn --project-root . --input proposal.json` to check a proposal.
+Project scope comes from the connected project. Independent committed evidence
+can verify a new, ordinary claim; human-review vetoes take precedence.
+A model recommendation alone cannot verify a claim.
+See the [candidate review policy](docs/CANDIDATE_REVIEW_POLICY.md) for the proposal format.
+
+### Optional unattended AI review
+
+External AI review is **off by default**, including after an upgrade. Ordinary
+candidates may be enrolled only after explicit user consent. The supported
+provider profile is Claude Code 2.1.303 on macOS using a first-party claude.ai
+subscription. Codex remains supported as a coding agent for local retrieval
+and learning. It is not an unattended review provider.
+
+```sh
+recallry review status    # Show this store's ON/OFF state, provider, threshold and consent
+recallry review enable    # Read the disclosure in your terminal and type ENABLE to opt in
+recallry review disable   # Turn off future unattended sends and revoke consent
+```
+
+`status` reads local settings. Enabling checks the Claude Code version and
+subscription login and makes a local backup before saving consent. Revocation
+works without a provider check or access to the backup destination. These
+commands do not submit candidates for review.
+
+The reviewed payload can include candidate IDs, titles, content, categories
+and scope. The provider also receives the review instructions and normal request metadata. A review uses
+the provider's subscription allowance. Revoking consent prevents subsequent
+sends; it cannot recall content already sent. Only new eligible candidates
+in the active consent period are considered. The default threshold is five.
+External review never replaces independent local evidence or a human-review
+veto. Do not copy consent or settings from another store or write consent
+tokens into the configuration by hand.
+
+The public 2.0.0 release was tested with synthetic candidates and a simulated
+provider. A live review submission to Anthropic was not tested.
+
+### Automatic backup
+
+A successful Knowledge write triggers the local backup check. With default
+settings, the next write after 24 hours records a verified SQLite snapshot.
+The first write with no prior backup is eligible immediately. Backup failures
+are reported separately from the committed write. See [backup and recovery](docs/BACKUPS.md).
 
 ## Privacy and local operation
 
 Knowledge is stored in `~/Recallry/data/recallry.db`. Runtime operations use local
-SQLite and files, with no network service, account, daemon, cloud sync or remote
-telemetry. There are no runtime Python dependencies outside the standard library;
+SQLite and files. Ordinary retrieval and evidence checking run locally.
+Unattended external AI review is off by default and requires separate consent.
+There is no Recallry-hosted service or remote telemetry. There are no runtime Python dependencies outside the standard library;
 installation may download build tooling.
 
 Local metrics are opt-in through `RECALLRY_METRICS=1`; the automatic retrieval
@@ -132,7 +160,7 @@ For manual (nonautomatic) context, task relevance ranks Knowledge within the
 eligible scope; it is not a minimum inclusion threshold. Entries with zero lexical
 matches may still be returned. Manual search remains a separate FTS5/LIKE path.
 
-Automatic context in v0.1.2 uses **Fix F2 Variant A → deterministic top 5 → existing
+Automatic context uses **Fix F2 Variant A → deterministic top 5 → existing
 render budget**. Only verified Knowledge is eligible. Script-aware lexical spans
 collapse overlapping CJK bigrams into evidence units, with stopword filtering and
 ASCII token-boundary matching. Global entries need at least two matched spans;
@@ -148,8 +176,7 @@ The existing renderer keeps its Global/Project grouping, 600-character body cap
 and 6,000-character total budget. `included_chars` remains `len(markdown)` and
 `json-compact` still omits duplicate Knowledge bodies. No new runtime dependency,
 model, embedding, cloud service or database migration is required. Existing
-Knowledge stores need no action. Router templates are unchanged from v0.1.1, so
-no router refresh is required for this update.
+Knowledge stores need no action. The retrieval contract from v0.1.2 remains in force.
 
 ### Context-size benchmark
 

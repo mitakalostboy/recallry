@@ -9,7 +9,7 @@ Normal project development takes priority over continuous Recallry feature work:
 ```
 normal project development
 → automatic candidate collection (router, max 2/task)
-→ periodic human review
+→ committed-evidence check or human review
 → verified knowledge reuse
 ```
 
@@ -39,22 +39,36 @@ Normally require at least one strong evidence category: authoritative specificat
 
 Review when pending candidates reach roughly **10**, or after a meaningful project checkpoint/milestone — whichever comes first. This is a practical trigger, not a hard invariant: don't review on every single new candidate, and don't let candidates accumulate indefinitely.
 
-## Automatic collection vs. automatic approval
+## Evidence-gated learning
 
-- Automatic candidate collection (router-driven, ≤2 items/task): allowed, normal operation.
-- Automatic promotion to `verified`: **not enabled**. All promotion is human-reviewed via `recallry promote`.
+`recallry learn --project-root . --input proposal.json` accepts a local proposal
+with a title, claim text, category, scope, concrete usefulness and evidence.
+For example, a project might have already committed this line to its specification:
 
-Conceptual next maturity step (not implemented):
-
+```json
+{
+  "title": "Retry budget",
+  "content": "Retry at most three times.",
+  "category": "rule",
+  "scope": "project",
+  "usefulness": "Keep independent implementations within the agreed retry budget.",
+  "evidence": [{
+    "kind": "artifact",
+    "path": "docs/retries.md",
+    "sha256": "<SHA-256 of the whole committed file>",
+    "quote": "Retry at most three times."
+  }]
+}
 ```
-candidate auto-collection
-→ AI-assisted classification (VERIFY? MERGE? KEEP? REJECT? scope?)
-→ human/explicit review approval
-```
 
-Automatic verified promotion should only be considered after this classification-assist step has evidence across multiple review batches — and even then requires an explicit decision to implement it. It is out of scope for this document.
+The CLI checks the working file, commit and exact claim. A recorded user decision
+must also match the scope, project, category and content. Only a genuinely global
+committed decision can verify a global claim. A new independent evidence event
+can reconsider a matching candidate. Repeated evidence alone does not approve it.
+Conflicts and sensitive claims remain for a person to review. Optional AI review
+can advise on ordinary uncertain items. Manual `add` still creates a candidate.
 
-## Future semi-automatic review signals (heuristics only, not automation)
+## Signals for human reviewers
 
 A candidate is **stronger** when it:
 - has been confirmed more than once (independently arrived at the same principle),

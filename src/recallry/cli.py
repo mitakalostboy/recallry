@@ -33,6 +33,16 @@ def parser() -> argparse.ArgumentParser:
     add.add_argument("--category", default="other", help=f"Suggested: {', '.join(CATEGORIES)}")
     add.add_argument("--source")
 
+    learn = commands.add_parser("learn", help="Evaluate a proposal using independent local evidence")
+    learn.add_argument("--project-root", type=Path, required=True)
+    learn.add_argument("--input", type=Path, required=True, help="Local evidence proposal JSON file")
+
+    review = commands.add_parser("review", help="Manage consent for unattended AI review")
+    actions = review.add_subparsers(dest="review_action", required=True)
+    actions.add_parser("status", help="Show the current store's review settings")
+    actions.add_parser("enable", help="Read the disclosure and grant consent interactively")
+    actions.add_parser("disable", help="Turn off unattended AI review and revoke consent")
+
     find = commands.add_parser("search", help="Search Knowledge")
     find.add_argument("query")
     find.add_argument("--limit", type=positive_int, default=50)
@@ -109,11 +119,85 @@ def _print_full(item: Knowledge) -> None:
         print(f"{name}: {value if value is not None else '-'}")
 
 
+def _review(root: Path, action: str) -> int:
+    from .review_settings import load_settings, save_settings
+
+    if action != "status" and os.environ.get("RECALLRY_READONLY"):
+        raise RecallryError("review settings cannot be changed in inherited read-only mode")
+    database = Database(root / "data" / "recallry.db")
+    if not (root / "config.toml").is_file() or not database.path.is_file():
+        raise RecallryError("Store is not initialized. Run 'recallry init' first.")
+    settings = load_settings(root)
+    provider_label = {"claude": "Claude Code", "codex": "Codex"}[settings.provider]
+    if action == "status":
+        print(f"Store: {root}")
+        print(f"Automatic review: {'ON' if settings.active else 'OFF'}")
+        print(f"Provider: {provider_label}")
+        print(f"Threshold: {settings.threshold} new eligible candidates")
+        print(f"Consent: {'current' if settings.active else 'no active consent'}")
+        return 0
+
+    # Apply the same public-store identity and schema checks as other mutations.
+    database.validate()
+    enable = action == "enable"
+    if enable:
+        from .backup_policy import PersonalBackups
+        from .review_providers import get_provider
+
+        if settings.active:
+            print("Automatic review is already ON.")
+            return 0
+        if not (sys.stdin.isatty() and sys.stdout.isatty()):
+            raise RecallryError("review enable requires an interactive terminal for informed consent")
+        if settings.provider != "claude":
+            raise RecallryError(f"Unattended review is unavailable for {provider_label}.")
+        print(f"Enable unattended Claude Code review for store {root}?")
+        print(f"When {settings.threshold} new eligible candidates accumulate, Recallry may send "
+              "their IDs, titles, content, categories and scope to Anthropic without asking again.")
+        print("Claude receives the review instructions and normal request metadata. "
+              "Reviews use your claude.ai subscription allowance.")
+        print("Existing candidates are not enrolled. Local evidence checks still apply. "
+              "Sensitive or conflicting claims require human review.")
+        print("Run 'recallry review disable' to revoke consent for future sends. "
+              "Content already sent cannot be recalled.")
+        try:
+            authorized = input("Type ENABLE to consent, or press Enter to cancel: ") == "ENABLE"
+        except (EOFError, KeyboardInterrupt):
+            authorized = False
+        if not authorized:
+            raise RecallryError("consent was not granted")
+        readiness = get_provider(settings.provider).availability(check=True)
+        if not readiness["available"]:
+            raise RecallryError(readiness["message"])
+        PersonalBackups(root).take("before")
+    elif not settings.enabled and not settings.consent:
+        print("Automatic review is already OFF. No active consent.")
+        return 0
+    # Revocation must work even if the provider or backup destination is offline.
+    save_settings(root, enabled=enable, threshold=settings.threshold, provider=settings.provider,
+                  consent=enable, expected_epoch=settings.epoch)
+    print("Automatic review is ON." if enable else "Automatic review is OFF. Consent revoked.")
+    return 0
+
+
 def run(args: argparse.Namespace) -> int:
+    root = resolve_recallry_root(args.root, os.environ)
+    if args.command == "review":
+        return _review(root, args.review_action)
+    if args.command == "learn" and os.environ.get("RECALLRY_READONLY"):
+        raise RecallryError("learning unavailable in inherited read-only mode")
     if _read_only_enabled() and args.command not in {"context", "search", "show", "list", "stats"}:
         raise RecallryError("write operation unavailable in read-only mode")
-    root = resolve_recallry_root(args.root, os.environ)
-    database = Database(root / "data" / "recallry.db")
+    def after_save():
+        from .backup_policy import PersonalBackups
+        from .backup import BACKUP_ERRORS
+        try:
+            PersonalBackups(root).take("write")
+        except BACKUP_ERRORS as exc:
+            print(f"Knowledge was saved; automatic backup failed: {exc}", file=sys.stderr)
+
+    mutation = args.command in {"add", "learn", "promote", "reject", "deprecate"}
+    database = Database(root / "data" / "recallry.db", on_saved=after_save if mutation else None)
     metrics = MetricsStore(root / "data" / "metrics.db")
     if args.command == "init":
         # Validate a pre-existing DB before provisioning any resources.
@@ -139,7 +223,13 @@ def run(args: argparse.Namespace) -> int:
     if not database.path.is_file():
         raise RecallryError("Database is not initialized. Run 'recallry init' first.")
     database.validate()
+    try:
+        return _execute(args, root, config, database, metrics)
+    finally:
+        database.notify_saved()
 
+
+def _execute(args, root, config, database, metrics) -> int:
     if args.command == "add":
         item = database.add(
             title=args.title, content=args.content, scope=args.scope, project=args.project,
@@ -149,6 +239,22 @@ def run(args: argparse.Namespace) -> int:
                         command="add", mode="manual", knowledge_ids=(item.id,),
                         origin=source_origin(item.source))
         print(f"Added {item.id} ({item.status}).")
+    elif args.command == "learn":
+        from .learning import learn, read_request
+
+        decision = learn(database, args.project_root, read_request(args.input))
+        if decision.get("created"):
+            item = database.get(decision["item_id"])
+            _record_metrics(metrics, "candidate_created", project_id=item.project, command="learn",
+                            mode="automatic", knowledge_ids=(item.id,), origin="automatic")
+        promoted = list(decision.get("automatic_review", {}).get("promoted", []))
+        if decision.get("decision") == "promote":
+            promoted.append(decision["item_id"])
+        for identifier in promoted:
+            item = database.get(identifier)
+            _record_metrics(metrics, "knowledge_promoted", project_id=item.project, command="learn",
+                            mode="automatic", knowledge_ids=(identifier,))
+        print(json.dumps({"status": "ok", **decision}, ensure_ascii=False))
     elif args.command == "search":
         _print_items(search(database, args.query, args.limit,
                             project=args.project, all_projects=args.all_projects))

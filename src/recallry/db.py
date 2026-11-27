@@ -33,8 +33,16 @@ def now_utc() -> str:
 
 
 class Database:
-    def __init__(self, path: Path):
+    def __init__(self, path: Path, *, on_saved=None):
         self.path = path
+        self._on_saved = on_saved
+        self._saved = False
+
+    def notify_saved(self):
+        """Deliver committed writes once, outside SQLite and consent locks."""
+        if self._saved and self._on_saved is not None:
+            self._saved = False
+            self._on_saved()
 
     @contextmanager
     def connect(self):
@@ -44,11 +52,24 @@ class Database:
         try:
             yield connection
             connection.commit()
+            if connection.total_changes:
+                self._saved = True
         except Exception:
             connection.rollback()
             raise
         finally:
             connection.close()
+
+    @contextmanager
+    def transaction(self):
+        """Reuse the lifecycle API under one writer lock (no schema change).
+
+        Automatic learning needs duplicate/conflict checks, candidate insertion,
+        audit source and promotion to commit together, including on concurrent calls.
+        """
+        with self.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            yield _TransactionDatabase(self.path, connection)
 
     def initialize(self) -> bool:
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -82,17 +103,20 @@ class Database:
         if not self.path.is_file():
             raise RecallryError("Database is not initialized. Run 'recallry init' first.")
         with self.connect() as connection:
-            integrity = connection.execute("PRAGMA integrity_check").fetchone()[0]
-            if integrity != "ok":
-                raise RecallryError(f"Database integrity check failed: {integrity}")
-            meta_exists = connection.execute(
-                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='recallry_meta'"
-            ).fetchone()
-            if not meta_exists:
-                raise SchemaValidationError(
-                    "Existing SQLite database is not recognized as an Recallry database."
-                )
-            self._validate_schema(connection)
+            self.validate_connection(connection)
+
+    def validate_connection(self, connection: sqlite3.Connection) -> None:
+        integrity = connection.execute("PRAGMA integrity_check").fetchone()[0]
+        if integrity != "ok":
+            raise RecallryError(f"Database integrity check failed: {integrity}")
+        meta_exists = connection.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='recallry_meta'"
+        ).fetchone()
+        if not meta_exists:
+            raise SchemaValidationError(
+                "Existing SQLite database is not recognized as an Recallry database."
+            )
+        self._validate_schema(connection)
 
     def _create_schema(self, connection: sqlite3.Connection) -> None:
         connection.execute(
@@ -368,6 +392,24 @@ class Database:
             )
         return self.get(item_id), True
 
+    def annotate_candidate(self, identifier: str, *, expected_source: str | None,
+                           source: str, progress_at: str | None = None) -> Knowledge:
+        """Attach evidence history without editing the claim or any verified item.
+
+        The learning transaction couples this annotation to the existing promote
+        transition. Failed/irrelevant attempts do not advance updated_at.
+        """
+        with self.connect() as connection:
+            item_id = self._resolve_id(connection, identifier)
+            changed = connection.execute(
+                "UPDATE knowledge SET source=?, updated_at=coalesce(?,updated_at) "
+                "WHERE id=? AND status='candidate' AND source IS ?",
+                (source, progress_at, item_id, expected_source),
+            ).rowcount
+            if changed != 1:
+                raise RecallryError("Candidate changed before evidence annotation")
+        return self.get(item_id)
+
     def increment_use_count(self, ids: list[str]) -> None:
         if not ids:
             return
@@ -376,3 +418,13 @@ class Database:
                 "UPDATE knowledge SET use_count = use_count + 1 WHERE id = ?",
                 ((item_id,) for item_id in ids),
             )
+
+
+class _TransactionDatabase(Database):
+    def __init__(self, path, connection):
+        super().__init__(path)
+        self._connection = connection
+
+    @contextmanager
+    def connect(self):
+        yield self._connection
